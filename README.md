@@ -2,7 +2,7 @@
 
 ## Requirement
 * Python 3.5+
-* Tensorflow 2
+* Tensorflow 2.0+
 * OpenCv
 * Numpy
 * Imgaug
