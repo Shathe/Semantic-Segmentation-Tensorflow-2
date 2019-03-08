@@ -96,6 +96,7 @@ if __name__ == "__main__":
 
     # build model
     model = MiniNetv2.MiniNetv2(num_classes=n_classes)
+    #model = Net.Segception(n_classes, input_shape=(None, None, 3), weights='imagenet')
 
     # optimizer
     learning_rate = tf.Variable(lr)
