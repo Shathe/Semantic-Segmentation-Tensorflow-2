@@ -301,9 +301,8 @@ class Segception(tf.keras.Model):
         x = self.adap_encoder_4_1(x)
         x = self.adap_encoder_4_2(x)
 
-        x = self.upsample4(x)
-        x = self.adap_encoder_5(x)
-        x = self.conv_logits(x)
+        x = self.upsample4(x, last=True)
+        x = tf.keras.activations.softmax(x, axis=-1)
 
         return x
 
