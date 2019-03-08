@@ -2,15 +2,8 @@ import tensorflow as tf
 from tensorflow.keras import layers, regularizers
 
 
-def upsampling(inputs, scale):
-
-    return tf.image.resize_bilinear(inputs, size=[tf.shape(inputs)[1] * scale, tf.shape(inputs)[2] * scale],
-                                    align_corners=True)
-
-
 def reshape_into(inputs, input_to_copy):
-    return tf.image.resize_bilinear(inputs, [input_to_copy.get_shape()[1].value,
-                                             input_to_copy.get_shape()[2].value], align_corners=True)
+    return tf.image.resize(inputs, (input_to_copy.shape[1], input_to_copy.shape[2]), method=tf.image.ResizeMethod.BILINEAR)
 
 
 # convolution
@@ -204,4 +197,115 @@ class MiniNetv2(tf.keras.Model):
         x = tf.keras.activations.softmax(x, axis=-1)
 
         return x
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class ShatheBlock(tf.keras.Model):
+    def __init__(self, filters, kernel_size,  dilation_rate=1):
+        super(ShatheBlock, self).__init__()
+
+        self.kernel_size = kernel_size
+        self.filters = filters
+
+        self.conv1 = DepthwiseConv_BN(self.filters, kernel_size=kernel_size, dilation_rate=dilation_rate)
+        self.conv2 = DepthwiseConv_BN(self.filters, kernel_size=kernel_size, dilation_rate=dilation_rate)
+        self.conv3 = DepthwiseConv_BN(self.filters, kernel_size=kernel_size, dilation_rate=dilation_rate)
+
+    def call(self, inputs):
+        x2 = self.conv1(inputs)
+        x3 = self.conv2(x2)
+        x = self.conv3(x3, activation=False)
+        if inputs.shape[3] == x.shape[3]:
+            return layers.ReLU()(x + inputs)
+        else:
+            return layers.ReLU()(x2 + x)
+
+
+
+
+class Segception(tf.keras.Model):
+    def __init__(self, num_classes, input_shape=(None, None, 3), weights='imagenet', **kwargs):
+        super(Segception, self).__init__(**kwargs)
+        base_model = tf.keras.applications.xception.Xception(include_top=False, weights=weights,
+                                                             input_shape=input_shape, pooling='avg')
+        output_1 = base_model.get_layer('block2_sepconv2_bn').output
+        output_2 = base_model.get_layer('block3_sepconv2_bn').output
+        output_3 = base_model.get_layer('block4_sepconv2_bn').output
+        output_4 = base_model.get_layer('block13_sepconv2_bn').output
+        output_5 = base_model.get_layer('block14_sepconv2_bn').output
+        outputs = [output_5, output_4, output_3, output_2, output_1]
+
+        self.model_output = tf.keras.Model(inputs=base_model.input, outputs=outputs)
+
+        # Decoder
+        self.adap_encoder_1 = ShatheBlock(filters=256, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_2 = ShatheBlock(filters=256, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_2_1 = ShatheBlock(filters=256, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_2_2 = ShatheBlock(filters=256, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_2_22 = ShatheBlock(filters=256, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_2_3 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_3 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_3_1 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_3_2 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_3_3 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_3_4 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_3_5 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+
+        self.adap_encoder_4 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_4_1 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_4_2 = ShatheBlock(filters=128, kernel_size=3, dilation_rate=1)
+        self.adap_encoder_5 = ShatheBlock(filters=64, kernel_size=3, dilation_rate=1)
+
+
+        self.upsample1 = MininetV2Upsample(256, 3, strides=2)
+        self.upsample2 = MininetV2Upsample(128, 3, strides=2)
+        self.upsample3 = MininetV2Upsample(128, 3, strides=2)
+        self.upsample4 = MininetV2Upsample(64, 3, strides=2)
+
+        self.conv_logits = conv(filters=num_classes, kernel_size=1, strides=1, use_bias=True)
+
+    def call(self, inputs):
+
+        outputs = self.model_output(inputs)
+        # add activations to the ourputs of the model
+        for i in range(len(outputs)):
+            outputs[i] = layers.LeakyReLU(alpha=0.3)(outputs[i])
+
+        x = self.upsample1(outputs[0])
+        x = self.adap_encoder_1(x) + self.adap_encoder_2(outputs[1])
+        x = self.adap_encoder_2_1(x)
+        x = self.adap_encoder_2_2(x)
+        x = self.adap_encoder_2_22(x)
+        x = self.upsample2(x)
+        x = self.adap_encoder_2_3(x)
+
+        x += self.adap_encoder_3(outputs[2])
+        x = self.adap_encoder_3_1(x)
+        x = self.adap_encoder_3_2(x)
+        x = self.adap_encoder_3_3(x)
+        x = self.adap_encoder_3_4(x)
+        x = self.upsample3(x)
+        x = self.adap_encoder_3_5(x)
+        x +=  reshape_into(self.adap_encoder_4(outputs[3]),x)
+        x = self.adap_encoder_4_1(x)
+        x = self.adap_encoder_4_2(x)
+
+        x = self.upsample4(x)
+        x = self.adap_encoder_5(x)
+        x = self.conv_logits(x)
+
+        return x
+
+
  
