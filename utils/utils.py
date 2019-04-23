@@ -4,7 +4,7 @@ import math
 import os
 import cv2
 import time
-
+import random
 # Prints the number of parameters of a model
 def get_params(model):
     # Init models (variables and input shape)
@@ -90,7 +90,7 @@ def generate_image(image_scores, output_dir, dataset, loader, train=False):
     cv2.imwrite(os.path.join(out_dir, name), image)
 
 
-def inference(model, x, y, n_classes, flip_inference=True, scales=[1], preprocess_mode=None, time_exect=False):
+def inference(model, x, y, n_classes, flip_inference=True, scales=[1], preprocess_mode=None, time_exect=False, train=True):
     x = preprocess(x, mode=preprocess_mode)
     [x] = convert_to_tensors([x])
 
@@ -104,7 +104,7 @@ def inference(model, x, y, n_classes, flip_inference=True, scales=[1], preproces
 
         pre = time.time()
 
-        y_scaled = model(x_scaled)
+        y_scaled = model(x_scaled, training=train)
         if time_exect and scale == 1:
             print("seconds to inference: " + str((time.time()-pre)*1000) + " ms")
 
@@ -115,7 +115,7 @@ def inference(model, x, y, n_classes, flip_inference=True, scales=[1], preproces
         y_scaled = tf.nn.softmax(y_scaled)
 
         if flip_inference:
-            # calculates flipped scores
+            # calculates flipped scoresreset_states
             y_flipped_ = tf.image.flip_left_right(model(tf.image.flip_left_right(x_scaled)))
             # resize to rela scale
             y_flipped_ = tf.image.resize(y_flipped_, (y.shape[1], y.shape[2]), method=tf.image.ResizeMethod.BILINEAR)
@@ -129,7 +129,7 @@ def inference(model, x, y, n_classes, flip_inference=True, scales=[1], preproces
     return y_
 
 # get accuracy and miou from a model
-def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scales=[1], write_images=False, preprocess_mode=None, time_exect=False, labels_resize_factor=1):
+def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scales=[1], write_images=False, preprocess_mode=None, time_exect=False, labels_resize_factor=1, optimizer=None):
     if train:
         loader.index_train = 0
     else:
@@ -145,10 +145,15 @@ def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scal
 
     for step in range(samples):  # for every batch
         x, y, mask = loader.get_batch(size=1, train=train, augmenter=False, labels_resize_factor=labels_resize_factor)
-        [y] = convert_to_tensors([y])
+        [imgs, y] = convert_to_tensors([x.copy(), y])
 
-        y_ = inference(model, x, y, n_classes, flip_inference, scales, preprocess_mode=preprocess_mode, time_exect=time_exect)
+        y_ = inference(model, x, y, n_classes, flip_inference, scales, preprocess_mode=preprocess_mode, time_exect=time_exect, train=train)
 
+        # tnsorboard
+        if optimizer != None and random.random() < 0.05:
+            tf.summary.image('input', tf.cast(imgs, tf.uint8), step=optimizer.iterations + step)
+            tf.summary.image('labels', tf.expand_dims( tf.cast(tf.argmax(y, 3)*int(255/n_classes), tf.uint8), -1), step=optimizer.iterations + step)
+            tf.summary.image('predicions', tf.expand_dims(tf.cast(tf.argmax(y_, 3)*int(255/n_classes), tf.uint8), -1), step=optimizer.iterations + step)
 
         # generate images
         if write_images:
@@ -164,5 +169,11 @@ def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scal
         mIoU.update_state(labels, predictions)
 
     # get the train and test accuracy from the model
-    return accuracy.result(), mIoU.result()
+    miou_result = mIoU.result()
+    acc_result = accuracy.result()
+    if optimizer != None:         # tnsorboard
+        tf.summary.scalar('mIoU', miou_result, step=optimizer.iterations)
+        tf.summary.scalar('accuracy', acc_result, step=optimizer.iterations)
+
+    return acc_result, miou_result
 

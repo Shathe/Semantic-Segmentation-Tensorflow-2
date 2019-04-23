@@ -60,8 +60,8 @@ class Loader:
         files = glob.glob(os.path.join(dataFolderPath, '*', '*', '*'))
 
         print('Structuring test and train files...')
-        self.test_list = [file for file in files if '/test/' in file]
-        self.train_list = [file for file in files if '/train/' in file]
+        self.test_list = [file for file in files if 'test' in file]
+        self.train_list = [file for file in files if 'train' in file]
 
         # Check problem type
         if problemType in problemTypes:
@@ -80,8 +80,8 @@ class Loader:
 
             print('Loaded ' + str(len(self.train_list)) + ' training samples')
             print('Loaded ' + str(len(self.test_list)) + ' testing samples')
-            classes_train = [file.split('/train/')[1].split('/')[0] for file in self.train_list]
-            classes_test = [file.split('/test/')[1].split('/')[0] for file in self.test_list]
+            classes_train = [file.split('train')[1].split('/')[0] for file in self.train_list]
+            classes_test = [file.split('test')[1].split('/')[0] for file in self.test_list]
             classes = np.unique(np.concatenate((classes_train, classes_test)))
             self.classes = {}
             for label in range(len(classes)):
@@ -102,10 +102,10 @@ class Loader:
             # Separate image and label lists
             # Sort them to align labels and images
 
-            self.image_train_list = [file for file in self.train_list if '/images/' in file]
-            self.image_test_list = [file for file in self.test_list if '/images/' in file]
-            self.label_train_list = [file for file in self.train_list if '/labels/' in file]
-            self.label_test_list = [file for file in self.test_list if '/labels/' in file]
+            self.image_train_list = [file for file in self.train_list if 'images' in file]
+            self.image_test_list = [file for file in self.test_list if 'images' in file]
+            self.label_train_list = [file for file in self.train_list if 'labels' in file]
+            self.label_test_list = [file for file in self.test_list if 'labels' in file]
 
             self.label_test_list.sort()
             self.image_test_list.sort()
@@ -139,7 +139,7 @@ class Loader:
         This function transofrm those 1's into a weight using the median frequency
         '''
         weights = self.median_freq
-        for i in xrange(masks.shape[0]):
+        for i in range(masks.shape[0]):
             # for every mask of the batch
             label_image = labels[i, :, :]
             mask_image = masks[i, :, :]
@@ -148,7 +148,7 @@ class Loader:
             label_image = np.reshape(label_image, (dim_2 * dim_1))
             mask_image = np.reshape(mask_image, (dim_2 * dim_1))
 
-            for label_i in xrange(self.n_classes):
+            for label_i in range(self.n_classes):
                 # multiply the mask so far, with the median frequency wieght of that label
                 mask_image[label_image == label_i] = mask_image[label_image == label_i] * weights[label_i]
             # unique, counts = np.unique(mask_image, return_counts=True)
@@ -263,14 +263,14 @@ class Loader:
 
         if train:
             file_list = self.train_list
-            folder = '/train/'
+            folder = 'train'
             # Get [size] random numbers
             indexes = [i % len(file_list) for i in range(self.index_train, self.index_train + size)]
             self.index_train = indexes[-1] + 1
 
         else:
             file_list = self.test_list
-            folder = '/test/'
+            folder = 'test'
             # Get [size] random numbers
             indexes = [i % len(file_list) for i in range(self.index_test, self.index_test + size)]
             self.index_test = indexes[-1] + 1
@@ -330,7 +330,7 @@ class Loader:
         elif self.problemType == 'segmentation':
             for image_label_train in self.label_train_list:
                 image = cv2.imread(image_label_train, 0)
-                for label in xrange(self.n_classes):
+                for label in range(self.n_classes):
                     self.freq[label] = self.freq[label] + sum(sum(image == label))
 
         # Common code
@@ -352,7 +352,7 @@ if __name__ == "__main__":
     # print(loader.median_frequency_exp())
     x, y, mask = loader.get_batch(size=2, augmenter='segmentation')
 
-    for i in xrange(2):
+    for i in range(2):
         cv2.imshow('x', ((x[i, :, :, :] + 1) * 127.5).astype(np.uint8))
         cv2.imshow('y', (np.argmax(y, 3)[i, :, :] * 25).astype(np.uint8))
         print(mask.shape)
