@@ -6,8 +6,6 @@ from tensorflow.keras.utils import to_categorical
 import glob
 import cv2
 import sys
-sys.path.append("../")
-from utils.augmenters import get_augmenter
 
 np.random.seed(7)
 
@@ -158,23 +156,6 @@ class Loader:
 
         return masks
 
-    def _perform_augmentation_segmentation(self, img, label, mask_image, augmenter):
-        seq_image, seq_label, seq_mask = get_augmenter(name=augmenter, c_val=255)
-
-        # apply some contrast  to de rgb image
-        img = img.reshape(sum(((1,), img.shape), ()))
-        img = seq_image.augment_images(img)
-        img = img.reshape(img.shape[1:])
-
-        label = label.reshape(sum(((1,), label.shape), ()))
-        label = seq_label.augment_images(label)
-        label = label.reshape(label.shape[1:])
-
-        mask_image = mask_image.reshape(sum(((1,), mask_image.shape), ()))
-        mask_image = seq_mask.augment_images(mask_image)
-        mask_image = mask_image.reshape(mask_image.shape[1:])
-
-        return img, label, mask_image
 
     # Returns a random batch of segmentation images: X, Y, mask
     def _get_batch_segmentation(self, size=32, train=True, labels_resize_factor=1):
@@ -287,10 +268,6 @@ class Loader:
             y[index] = classes[index]
         # the labeling to categorical (if 5 classes and value is 2:  2 -> [0,0,1,0,0])
         y = to_categorical(y, num_classes=self.n_classes)
-        # augmentation
-        if augmenter:
-            augmenter_seq = get_augmenter(name=augmenter)
-            x = augmenter_seq.augment_images(x)
 
         return x, y
 
@@ -305,7 +282,6 @@ class Loader:
     def get_batch(self, size=32, train=True, labels_resize_factor=1):
         '''
         Gets a batch of size [size]. If [train] the data will be training data, if not, test data.
-        if augmenter is no None, image augmentation will be perform (see file augmenters.py)
         if images are bigger than max_size of smaller than min_size, images will be resized (forced)
         '''
         if self.problemType == 'classification':

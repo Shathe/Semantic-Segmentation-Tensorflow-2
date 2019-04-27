@@ -102,7 +102,7 @@ if __name__ == "__main__":
 
     n_classes = 11
     batch_size = 4
-    epochs = 0
+    epochs = 1000
     width_test = 480
     height_test = 360
     width_train = int(width_test/2) # will be cropped from width_test size
