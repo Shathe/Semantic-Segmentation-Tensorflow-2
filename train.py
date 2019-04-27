@@ -101,16 +101,16 @@ if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = str(n_gpu)
 
     n_classes = 11
-    batch_size = 8
+    batch_size = 4
     epochs = 0
-    width_test = 368
-    height_test = 256
+    width_test = 480
+    height_test = 360
     width_train = int(width_test/2) # will be cropped from width_test size
     height_train = int(height_test/2)  # will be cropped from height_test size
 
 
 
-    labels_resize_factor = 2 # factor to divide the label size
+    labels_resize_factor = 2 # factor to divide the label size (must matach with the output size of the CNN
     channels = 3
     lr = 8e-4
     name_best_model = os.path.join('weights', 'camvid', 'best')

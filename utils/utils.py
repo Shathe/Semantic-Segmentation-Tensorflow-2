@@ -199,8 +199,6 @@ def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scal
 
         labels, predictions = erase_ignore_pixels(labels=tf.argmax(y, 1), predictions=tf.argmax(y_, 1), mask=mask)
         accuracy.update_state(labels, predictions)
-        print( accuracy.result())
-
         mIoU.update_state(labels, predictions)
 
     # get the train and test accuracy from the model
