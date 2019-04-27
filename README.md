@@ -5,7 +5,6 @@
 * Tensorflow 2.0+
 * OpenCv
 * Numpy
-* Imgaug
 
 
 ## Train with eager execution
