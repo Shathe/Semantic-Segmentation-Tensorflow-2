@@ -3,19 +3,28 @@ import tensorflow as tf
 import nets.MiniNetv2 as MiniNetv2
 import os
 import utils.Loader as Loader
-from utils.utils import get_params, preprocess, lr_decay, convert_to_tensors, restore_state, erase_ignore_pixels, init_model, get_metrics
+from utils.utils import get_params, preprocess, lr_decay, convert_to_tensors, restore_state, apply_augmentation, get_metrics
 tf.random.set_seed(7)
 np.random.seed(7)
 
 # @tf.function
-def train_step(model, x, y, mask, loss_function, optimizer):
+def train_step(model, x, y, mask, loss_function, optimizer, labels_resize_factor, size_input):
     with tf.GradientTape() as tape:
 
         [x, y, mask] = convert_to_tensors([x, y, mask]) # convert numpy to tensor
+        mask = tf.expand_dims(mask, axis=-1)
+
+        x, y, mask = apply_augmentation(x, y, mask, size_input)
+
+        #resize if needed
+        if labels_resize_factor!= 1:
+            mask = tf.image.resize(mask, (int(mask.shape[1]/labels_resize_factor), int(mask.shape[2]/labels_resize_factor)), method=tf.image.ResizeMethod.BILINEAR)
+            y = tf.image.resize(y, (int(y.shape[1]/labels_resize_factor), int(y.shape[2]/labels_resize_factor)), method=tf.image.ResizeMethod.BILINEAR)
+
+
         y_ = model(x, training=True)  # get output of the model.
 
         # Apply mask to ignore labels
-        mask = tf.expand_dims(mask, axis=-1)
         y *= mask
 
         loss = loss_function(y, y_) # apply loss
@@ -29,7 +38,7 @@ def train_step(model, x, y, mask, loss_function, optimizer):
 
 
 # Trains the model for certains epochs on a dataset
-def train(loader, optimizer, loss_function, model, epochs=5, batch_size=2, augmenter=False, lr=None, init_lr=2e-4,
+def train(loader, optimizer, loss_function, model, size_input,  epochs=5, batch_size=2, lr=None, init_lr=2e-4,
           evaluation=True, name_best_model = 'weights/best', preprocess_mode=None, labels_resize_factor=1):
     # Parameters for training
     training_samples = len(loader.image_train_list)
@@ -46,11 +55,11 @@ def train(loader, optimizer, loss_function, model, epochs=5, batch_size=2, augme
         print('epoch: ' + str(epoch+1) + '. Learning rate: ' + str(lr.numpy()))
         for step in range(steps_per_epoch):  # for every batch
             # get batch
-            x, y, mask = loader.get_batch(size=batch_size, train=True, augmenter=augmenter, labels_resize_factor=labels_resize_factor)
+            x, y, mask = loader.get_batch(size=batch_size, train=True)
             x = preprocess(x, mode=preprocess_mode)
 
             with train_summary_writer.as_default():
-                loss = train_step(model, x, y, mask, loss_function, optimizer)
+                loss = train_step(model, x, y, mask, loss_function, optimizer, labels_resize_factor, size_input)
                 # tensorboard
                 avg_loss.update_state(loss)
                 if tf.equal(optimizer.iterations % log_freq, 0):
@@ -92,10 +101,15 @@ if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = str(n_gpu)
 
     n_classes = 11
-    batch_size = 2
-    epochs = 1000
-    width = 360 #960
-    height = 280 #720
+    batch_size = 8
+    epochs = 0
+    width_test = 368
+    height_test = 256
+    width_train = int(width_test/2) # will be cropped from width_test size
+    height_train = int(height_test/2)  # will be cropped from height_test size
+
+
+
     labels_resize_factor = 2 # factor to divide the label size
     channels = 3
     lr = 8e-4
@@ -104,7 +118,7 @@ if __name__ == "__main__":
     preprocess_mode = 'imagenet'  #possible values 'imagenet', 'normalize',None
 
     loader = Loader.Loader(dataFolderPath=dataset_path, n_classes=n_classes, problemType='segmentation',
-                           width=width, height=height, channels=channels)
+                           width=width_test, height=height_test, channels=channels)
 
     # build model
     model = MiniNetv2.MiniNetv2(num_classes=n_classes)
@@ -120,8 +134,8 @@ if __name__ == "__main__":
 
 
 
-    train(loader=loader, optimizer=optimizer, loss_function=loss_function, model=model, epochs=epochs, batch_size=batch_size,
-          augmenter='segmentation', lr=learning_rate, init_lr=lr,  name_best_model=name_best_model, evaluation=True, preprocess_mode=preprocess_mode,
+    train(loader=loader, optimizer=optimizer, loss_function=loss_function, model=model, size_input=(height_train, width_train), epochs=epochs, batch_size=batch_size,
+          lr=learning_rate, init_lr=lr,  name_best_model=name_best_model, evaluation=True, preprocess_mode=preprocess_mode,
           labels_resize_factor=labels_resize_factor)
 
     get_params(model)

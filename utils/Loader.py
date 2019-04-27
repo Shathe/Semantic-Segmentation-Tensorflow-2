@@ -177,7 +177,7 @@ class Loader:
         return img, label, mask_image
 
     # Returns a random batch of segmentation images: X, Y, mask
-    def _get_batch_segmentation(self, size=32, train=True, augmenter=None, labels_resize_factor=1):
+    def _get_batch_segmentation(self, size=32, train=True, labels_resize_factor=1):
         labels_w = int(self.width / labels_resize_factor)
         labels_h = int(self.height / labels_resize_factor)
         # init numpy arrays
@@ -224,10 +224,6 @@ class Loader:
                 img = cv2.resize(img, (self.width, self.height), interpolation=cv2.INTER_AREA)
             if label.shape[1] != labels_w or label.shape[0] != labels_h:
                 label = cv2.resize(label, (labels_w, labels_h), interpolation=cv2.INTER_NEAREST)
-
-            # Apply augmentation the 75% of times and random.random() < 0.75
-            if train and augmenter:
-                img, label, mask_image = self._perform_augmentation_segmentation(img, label, mask_image, augmenter)
 
             # modify the mask and the labels. Mask
             mask_ignore = label >= self.n_classes
@@ -306,16 +302,16 @@ class Loader:
         return None
 
     # Returns a random batch
-    def get_batch(self, size=32, train=True, augmenter=None, labels_resize_factor=1):
+    def get_batch(self, size=32, train=True, labels_resize_factor=1):
         '''
         Gets a batch of size [size]. If [train] the data will be training data, if not, test data.
         if augmenter is no None, image augmentation will be perform (see file augmenters.py)
         if images are bigger than max_size of smaller than min_size, images will be resized (forced)
         '''
         if self.problemType == 'classification':
-            return self._get_batch_rgb(size=size, train=train, augmenter=augmenter)
+            return self._get_batch_rgb(size=size, train=train)
         elif self.problemType == 'segmentation':
-            return self._get_batch_segmentation(size=size, train=train, augmenter=augmenter, labels_resize_factor=labels_resize_factor)
+            return self._get_batch_segmentation(size=size, train=train, labels_resize_factor=labels_resize_factor)
 
     # Returns the median frequency for class imbalance. It can be soften with the soft value (<=1)
     def median_frequency_exp(self, soft=1):

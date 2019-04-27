@@ -128,6 +128,35 @@ def inference(model, x, y, n_classes, flip_inference=True, scales=[1], preproces
 
     return y_
 
+# Apply some augmentations
+def apply_augmentation(image, labels, mask, size_crop):
+    # image, labels and masks are tensors of shape [b, w, h, c]
+
+    mask = tf.cast(mask, tf.float32)
+    labels = tf.cast(labels, tf.float32)
+    dim_img = image.shape[-1]
+    dim_labels = labels.shape[-1]
+    dim_mask = mask.shape[-1]
+
+    all = tf.concat([image, labels, mask], -1)
+    size_crop = (all.shape[0], size_crop[0], size_crop[1], all.shape[3])
+
+    all = tf.image.random_flip_left_right(all)
+    #all = tf.image.random_flip_up_down(all)
+    all = tf.image.random_crop(all, size_crop)
+
+
+    image, labels, mask = tf.split(all, [dim_img, dim_labels, dim_mask], -1)
+    # image = tf.image.random_brightness(image, max_delta=32. / 255.)
+    # image = tf.image.random_contrast(image, lower=0.7, upper=1.3)
+
+
+    mask = tf.cast(mask, tf.uint8)
+    labels = tf.cast(labels, tf.uint8)
+
+    return image, labels, mask
+
+
 # get accuracy and miou from a model
 def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scales=[1], write_images=False, preprocess_mode=None, time_exect=False, labels_resize_factor=1, optimizer=None):
     if train:
@@ -144,8 +173,12 @@ def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scal
         samples = len(loader.image_test_list)
 
     for step in range(samples):  # for every batch
-        x, y, mask = loader.get_batch(size=1, train=train, augmenter=False, labels_resize_factor=labels_resize_factor)
+        x, y, mask = loader.get_batch(size=1, train=train)
         [imgs, y] = convert_to_tensors([x.copy(), y])
+        #resize if needed
+        if labels_resize_factor!= 1:
+            mask = tf.image.resize(tf.expand_dims(mask, axis=-1), (int(mask.shape[1]/labels_resize_factor), int(mask.shape[2]/labels_resize_factor)), method=tf.image.ResizeMethod.BILINEAR)
+            y = tf.image.resize(y, (int(y.shape[1]/labels_resize_factor), int(y.shape[2]/labels_resize_factor)), method=tf.image.ResizeMethod.BILINEAR)
 
         y_ = inference(model, x, y, n_classes, flip_inference, scales, preprocess_mode=preprocess_mode, time_exect=time_exect, train=train)
 
@@ -166,6 +199,8 @@ def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scal
 
         labels, predictions = erase_ignore_pixels(labels=tf.argmax(y, 1), predictions=tf.argmax(y_, 1), mask=mask)
         accuracy.update_state(labels, predictions)
+        print( accuracy.result())
+
         mIoU.update_state(labels, predictions)
 
     # get the train and test accuracy from the model
