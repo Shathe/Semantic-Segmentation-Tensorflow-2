@@ -5,6 +5,7 @@ import os
 import cv2
 import time
 import random
+
 # Prints the number of parameters of a model
 def get_params(model):
     # Init models (variables and input shape)
@@ -24,7 +25,7 @@ def preprocess(x, mode='imagenet'):
         if 'imagenet' in mode:
             return tf.keras.applications.xception.preprocess_input(x)
         elif 'normalize' in mode:
-            return  x.astype(np.float32) / 127.5 - 1
+            return x.astype(np.float32) / 127.5 - 1
     else:
         return x
 
@@ -32,6 +33,7 @@ def preprocess(x, mode='imagenet'):
 def lr_decay(lr, init_learning_rate, end_learning_rate, epoch, total_epochs, power=0.9):
     lr.assign(
         (init_learning_rate - end_learning_rate) * math.pow(1 - epoch / 1. / total_epochs, power) + end_learning_rate)
+
 
 # converts a list of arrays into a list of tensors
 def convert_to_tensors(list_to_convert):
@@ -52,8 +54,7 @@ def restore_state(model, checkpoint):
 def init_model(model, input_shape):
     model._set_inputs(np.zeros(input_shape))
 
-
-# Erase the elements if they are from ignore class. returns the labesl and predictions with no ignore labels
+# Erase the elements if they are from ignore class. returns the labels and predictions with no ignore labels
 def erase_ignore_pixels(labels, predictions, mask):
     indices = tf.squeeze(tf.where(tf.greater(mask, 0)))  # not ignore labels
     labels = tf.cast(tf.gather(labels, indices), tf.int64)
@@ -99,7 +100,7 @@ def inference(model, x, y, n_classes, flip_inference=True, scales=[1], preproces
 
     for scale in scales:
         # scale the image
-        x_scaled = tf.image.resize(x, (x.shape[1] * scale, x.shape[2] * scale),
+        x_scaled = tf.image.resize(x, (int(x.shape[1] * scale), int(x.shape[2] * scale)),
                                               method=tf.image.ResizeMethod.BILINEAR)
 
         pre = time.time()
@@ -115,7 +116,7 @@ def inference(model, x, y, n_classes, flip_inference=True, scales=[1], preproces
         y_scaled = tf.nn.softmax(y_scaled)
 
         if flip_inference:
-            # calculates flipped scoresreset_states
+            # calculates flipped scores reset_states
             y_flipped_ = tf.image.flip_left_right(model(tf.image.flip_left_right(x_scaled)))
             # resize to rela scale
             y_flipped_ = tf.image.resize(y_flipped_, (y.shape[1], y.shape[2]), method=tf.image.ResizeMethod.BILINEAR)
@@ -129,7 +130,7 @@ def inference(model, x, y, n_classes, flip_inference=True, scales=[1], preproces
     return y_
 
 # Apply some augmentations
-def apply_augmentation(image, labels, mask, size_crop):
+def apply_augmentation(image, labels, mask, size_crop, zoom_factor):
     # image, labels and masks are tensors of shape [b, w, h, c]
 
     mask = tf.cast(mask, tf.float32)
@@ -139,26 +140,33 @@ def apply_augmentation(image, labels, mask, size_crop):
     dim_mask = mask.shape[-1]
 
     all = tf.concat([image, labels, mask], -1)
-    size_crop = (all.shape[0], size_crop[0], size_crop[1], all.shape[3])
 
+    if random.random() > 0.5:
+        #size to resize
+        r_factor = (random.random() * zoom_factor * 2 - zoom_factor) + 1
+        resize_size = (int(all.shape[1]* r_factor), int(all.shape[2]* r_factor))
+        all = tf.image.resize(all, resize_size, method=tf.image.ResizeMethod.BILINEAR)
+
+
+    size_crop = (all.shape[0], size_crop[0], size_crop[1], all.shape[3])
     all = tf.image.random_flip_left_right(all)
     #all = tf.image.random_flip_up_down(all)
     all = tf.image.random_crop(all, size_crop)
 
 
     image, labels, mask = tf.split(all, [dim_img, dim_labels, dim_mask], -1)
-    # image = tf.image.random_brightness(image, max_delta=32. / 255.)
-    # image = tf.image.random_contrast(image, lower=0.7, upper=1.3)
+
+    if random.random() > 0.5:
+        image = tf.image.random_brightness(image, max_delta=20. / 255.)
+        image = tf.image.random_contrast(image, lower=0.9, upper=1.15)
 
 
-    mask = tf.cast(mask, tf.uint8)
-    labels = tf.cast(labels, tf.uint8)
 
     return image, labels, mask
 
 
 # get accuracy and miou from a model
-def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scales=[1], write_images=False, preprocess_mode=None, time_exect=False, labels_resize_factor=1, optimizer=None):
+def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scales=[1], write_images=False, preprocess_mode=None, time_exect=False,  optimizer=None):
     if train:
         loader.index_train = 0
     else:
@@ -175,10 +183,6 @@ def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scal
     for step in range(samples):  # for every batch
         x, y, mask = loader.get_batch(size=1, train=train)
         [imgs, y] = convert_to_tensors([x.copy(), y])
-        #resize if needed
-        if labels_resize_factor!= 1:
-            mask = tf.image.resize(tf.expand_dims(mask, axis=-1), (int(mask.shape[1]/labels_resize_factor), int(mask.shape[2]/labels_resize_factor)), method=tf.image.ResizeMethod.BILINEAR)
-            y = tf.image.resize(y, (int(y.shape[1]/labels_resize_factor), int(y.shape[2]/labels_resize_factor)), method=tf.image.ResizeMethod.BILINEAR)
 
         y_ = inference(model, x, y, n_classes, flip_inference, scales, preprocess_mode=preprocess_mode, time_exect=time_exect, train=train)
 
@@ -204,7 +208,8 @@ def get_metrics(loader, model, n_classes, train=True, flip_inference=False, scal
     # get the train and test accuracy from the model
     miou_result = mIoU.result()
     acc_result = accuracy.result()
-    if optimizer != None:         # tnsorboard
+
+    if optimizer != None:         # tensorboard
         tf.summary.scalar('mIoU', miou_result, step=optimizer.iterations)
         tf.summary.scalar('accuracy', acc_result, step=optimizer.iterations)
 
